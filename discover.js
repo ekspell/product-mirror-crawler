@@ -150,9 +150,35 @@ async function run() {
   const baseUrl = 'https://calendly.com';
   
   console.log('Opening Calendly login...');
-  await page.goto(baseUrl + '/login');
-  console.log('Please log in manually. Press Enter when done...');
-  await new Promise(resolve => process.stdin.once('data', resolve));
+  await page.goto(baseUrl + '/login', { waitUntil: 'networkidle' });
+
+  try {
+    // Step 1: Enter email
+    const emailInput = page.getByLabel('Email address');
+    await emailInput.waitFor({ timeout: 10000 });
+    await emailInput.fill(process.env.CALENDLY_EMAIL);
+
+    // Step 2: Click Continue
+    const continueButton = page.getByRole('button', { name: /continue/i });
+    await continueButton.click();
+
+    // Step 3: Enter password (appears on second step)
+    const passwordInput = page.getByLabel('Password');
+    await passwordInput.waitFor({ timeout: 10000 });
+    await passwordInput.fill(process.env.CALENDLY_PASSWORD);
+
+    // Step 4: Click Log In
+    const loginButton = page.getByRole('button', { name: /log in/i });
+    await loginButton.click();
+
+    // Wait for navigation to the app
+    await page.waitForURL('**/app/**', { timeout: 30000 });
+    console.log('Auto-login successful!');
+  } catch (err) {
+    console.log(`Auto-login failed: ${err.message}`);
+    console.log('Please log in manually. Press Enter when done...');
+    await new Promise(resolve => process.stdin.once('data', resolve));
+  }
   
   const startPath = new URL(page.url()).pathname;
   discovered.push(startPath);
