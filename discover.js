@@ -34,6 +34,31 @@ function getPageNameFromPath(path) {
     .replace(/\b\w/g, c => c.toUpperCase());
 }
 
+async function dismissCookieBanner(page) {
+  const buttonLabels = [
+    /accept all/i,
+    /accept cookies/i,
+    /accept$/i,
+    /got it/i,
+    /i agree/i,
+    /allow all/i,
+    /ok$/i,
+    /okay/i,
+    /consent/i,
+  ];
+  for (const label of buttonLabels) {
+    const btn = page.getByRole('button', { name: label });
+    try {
+      await btn.waitFor({ timeout: 1500 });
+      await btn.click();
+      console.log('  Dismissed cookie banner');
+      return;
+    } catch {
+      // not found, try next
+    }
+  }
+}
+
 async function discoverLinks(page, baseUrl) {
   const links = await page.evaluate((base) => {
     const anchors = Array.from(document.querySelectorAll('a[href]'));
@@ -75,7 +100,8 @@ async function crawlPage(page, path, baseUrl, productId) {
     await page.goto(url, { timeout: 15000 });
   }
   await page.waitForTimeout(2000);
-  
+  await dismissCookieBanner(page);
+
   const screenshotBuffer = await page.screenshot({ fullPage: false });
   
   const flowName = getFlowName(path);
@@ -190,6 +216,7 @@ async function run() {
   
   console.log('Opening Calendly login...');
   await page.goto(baseUrl + '/login', { waitUntil: 'networkidle' });
+  await dismissCookieBanner(page);
 
   try {
     // Step 1: Enter email
