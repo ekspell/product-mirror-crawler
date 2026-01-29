@@ -10,6 +10,7 @@ const supabase = createClient(
 const visited = new Set();
 const visitedBasePaths = new Set();
 const discovered = [];
+const connections = []; // {sourcePath, destPath} pairs for flow mapping
 
 function getFlowName(path) {
   if (path.includes('/admin')) return 'Admin';
@@ -125,10 +126,48 @@ async function crawlPage(page, path, baseUrl, productId) {
   
   const links = await discoverLinks(page, baseUrl);
   for (const link of links) {
+    connections.push({ sourcePath: path, destPath: link });
     if (!visited.has(link)) {
       discovered.push(link);
     }
   }
+}
+
+async function saveConnections(productId) {
+  console.log(`\nSaving ${connections.length} page connections...`);
+  let saved = 0;
+
+  for (const { sourcePath, destPath } of connections) {
+    // Look up both routes by path
+    const { data: sourceRoute } = await supabase
+      .from('routes')
+      .select('id')
+      .eq('path', sourcePath)
+      .eq('product_id', productId)
+      .single();
+
+    const { data: destRoute } = await supabase
+      .from('routes')
+      .select('id')
+      .eq('path', destPath)
+      .eq('product_id', productId)
+      .single();
+
+    if (!sourceRoute || !destRoute) continue;
+    if (sourceRoute.id === destRoute.id) continue;
+
+    const { error } = await supabase
+      .from('page_connections')
+      .upsert({
+        source_route_id: sourceRoute.id,
+        destination_route_id: destRoute.id,
+        product_id: productId
+      }, { onConflict: 'source_route_id,destination_route_id' });
+
+    if (!error) saved++;
+  }
+
+  console.log(`Saved ${saved} unique connections.`);
 }
 
 async function run() {
@@ -190,6 +229,8 @@ async function run() {
     await crawlPage(page, path, baseUrl, product.id);
   }
   
+  await saveConnections(product.id);
+
   console.log(`\nDone! Discovered ${visited.size} screens.`);
   await browser.close();
 }
