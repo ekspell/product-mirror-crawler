@@ -237,8 +237,11 @@ async function run() {
     const loginButton = page.getByRole('button', { name: /log in|sign in|continue/i }).first();
     await loginButton.click();
 
-    // Wait for navigation to the app
-    await page.waitForURL('**/app/**', { timeout: 30000 });
+    // Wait for navigation past the login/signup pages
+    await page.waitForURL(url => {
+      const path = new URL(url).pathname;
+      return path.startsWith('/app') && !path.includes('/login') && !path.includes('/signup');
+    }, { timeout: 30000 });
     console.log('Auto-login successful!');
   } catch (err) {
     console.log(`Auto-login failed: ${err.message}`);
