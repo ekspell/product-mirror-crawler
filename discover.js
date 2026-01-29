@@ -8,6 +8,7 @@ const supabase = createClient(
 );
 
 const visited = new Set();
+const visitedBasePaths = new Set();
 const discovered = [];
 
 function getFlowName(path) {
@@ -24,7 +25,7 @@ function getFlowName(path) {
   return 'Other';
 }
 
-function getPageName(path) {
+function getPageNameFromPath(path) {
   const parts = path.split('/').filter(Boolean);
   const last = parts[parts.length - 1] || 'Home';
   return last
@@ -55,6 +56,14 @@ async function discoverLinks(page, baseUrl) {
 async function crawlPage(page, path, baseUrl, productId) {
   if (visited.has(path)) return;
   visited.add(path);
+
+  // Skip if we already crawled this base path with different query params
+  const basePath = path.split('?')[0];
+  if (visitedBasePaths.has(basePath)) {
+    console.log(`  Skipping duplicate: ${path} (already have ${basePath})`);
+    return;
+  }
+  visitedBasePaths.add(basePath);
   
   const url = baseUrl + path;
   console.log(`Discovering: ${path}`);
@@ -69,7 +78,14 @@ async function crawlPage(page, path, baseUrl, productId) {
   const screenshotBuffer = await page.screenshot({ fullPage: false });
   
   const flowName = getFlowName(path);
-  const pageName = getPageName(path);
+
+  let pageName = await page.title();
+  // Strip common suffixes like " | Calendly" or " - Calendly"
+  pageName = pageName.replace(/\s*[|–—-]\s*Calendly\s*$/i, '').trim();
+  // Fall back to URL-based name if title is empty or generic
+  if (!pageName || pageName.toLowerCase() === 'calendly') {
+    pageName = getPageNameFromPath(path);
+  }
   
   const { data: route, error: routeError } = await supabase
     .from('routes')
