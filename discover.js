@@ -156,8 +156,9 @@ async function crawlPage(page, path, baseUrl, productId) {
   
   const links = await discoverLinks(page, baseUrl);
   for (const link of links) {
-    connections.push({ sourcePath: path, destPath: link });
     if (!visited.has(link)) {
+      // Only track forward connections (new pages, not back-links)
+      connections.push({ sourcePath: path, destPath: link });
       discovered.push(link);
     }
   }
