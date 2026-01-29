@@ -11,6 +11,7 @@ const visited = new Set();
 const visitedBasePaths = new Set();
 const discovered = [];
 const connections = []; // {sourcePath, destPath} pairs for flow mapping
+const pathToRouteId = new Map(); // path → route UUID from this crawl
 
 function getFlowName(path) {
   if (path.includes('/admin')) return 'Admin';
@@ -129,7 +130,10 @@ async function crawlPage(page, path, baseUrl, productId) {
     console.log(`  Route error: ${routeError.message}`);
     return;
   }
-  
+
+  pathToRouteId.set(path, route.id);
+  pathToRouteId.set(path.split('?')[0], route.id); // also map base path for duplicate resolution
+
   const timestamp = Date.now();
   const filename = `calendly-${pageName.toLowerCase().replace(/\s+/g, '-')}-${timestamp}.png`;
   
@@ -160,40 +164,46 @@ async function crawlPage(page, path, baseUrl, productId) {
 }
 
 async function saveConnections(productId) {
-  console.log(`\nSaving ${connections.length} page connections...`);
-  let saved = 0;
+  console.log(`\nSaving page connections...`);
+
+  // Deduplicate connections and resolve route IDs from in-memory map
+  const seen = new Set();
+  const toInsert = [];
 
   for (const { sourcePath, destPath } of connections) {
-    // Look up both routes by path
-    const { data: sourceRoute } = await supabase
-      .from('routes')
-      .select('id')
-      .eq('path', sourcePath)
-      .eq('product_id', productId)
-      .single();
+    const sourceId = pathToRouteId.get(sourcePath) || pathToRouteId.get(sourcePath.split('?')[0]);
+    const destId = pathToRouteId.get(destPath) || pathToRouteId.get(destPath.split('?')[0]);
 
-    const { data: destRoute } = await supabase
-      .from('routes')
-      .select('id')
-      .eq('path', destPath)
-      .eq('product_id', productId)
-      .single();
+    if (!sourceId || !destId || sourceId === destId) continue;
 
-    if (!sourceRoute || !destRoute) continue;
-    if (sourceRoute.id === destRoute.id) continue;
+    const key = `${sourceId}:${destId}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
 
-    const { error } = await supabase
-      .from('page_connections')
-      .upsert({
-        source_route_id: sourceRoute.id,
-        destination_route_id: destRoute.id,
-        product_id: productId
-      }, { onConflict: 'source_route_id,destination_route_id' });
-
-    if (!error) saved++;
+    toInsert.push({
+      source_route_id: sourceId,
+      destination_route_id: destId,
+      product_id: productId
+    });
   }
 
-  console.log(`Saved ${saved} unique connections.`);
+  if (toInsert.length === 0) {
+    console.log('No connections to save.');
+    return;
+  }
+
+  // Batch upsert in chunks of 50
+  let saved = 0;
+  for (let i = 0; i < toInsert.length; i += 50) {
+    const batch = toInsert.slice(i, i + 50);
+    const { error } = await supabase
+      .from('page_connections')
+      .upsert(batch, { onConflict: 'source_route_id,destination_route_id' });
+
+    if (!error) saved += batch.length;
+  }
+
+  console.log(`Saved ${saved} unique connections (from ${connections.length} total links).`);
 }
 
 async function run() {
