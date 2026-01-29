@@ -219,22 +219,22 @@ async function run() {
   await dismissCookieBanner(page);
 
   try {
-    // Step 1: Enter email
-    const emailInput = page.getByLabel('Email address');
-    await emailInput.waitFor({ timeout: 10000 });
-    await emailInput.fill(process.env.CALENDLY_EMAIL);
+    // Step 1: Enter email — try multiple selectors
+    const emailInput = page.getByLabel('Email').or(page.getByLabel('Email address')).or(page.locator('input[type="email"]'));
+    await emailInput.first().waitFor({ timeout: 10000 });
+    await emailInput.first().fill(process.env.CALENDLY_EMAIL);
 
     // Step 2: Click Continue
-    const continueButton = page.getByRole('button', { name: /continue/i });
+    const continueButton = page.getByRole('button', { name: /continue/i }).first();
     await continueButton.click();
 
-    // Step 3: Enter password (appears on second step)
-    const passwordInput = page.getByLabel('Password');
-    await passwordInput.waitFor({ timeout: 10000 });
-    await passwordInput.fill(process.env.CALENDLY_PASSWORD);
+    // Step 3: Enter password (appears on second step) — try multiple selectors
+    const passwordInput = page.getByLabel('Password').or(page.locator('input[type="password"]'));
+    await passwordInput.first().waitFor({ timeout: 10000 });
+    await passwordInput.first().fill(process.env.CALENDLY_PASSWORD);
 
-    // Step 4: Click Log In
-    const loginButton = page.getByRole('button', { name: /log in/i });
+    // Step 4: Click Log In / Continue
+    const loginButton = page.getByRole('button', { name: /log in|sign in|continue/i }).first();
     await loginButton.click();
 
     // Wait for navigation to the app
