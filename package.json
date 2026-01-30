@@ -11,10 +11,14 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.72.0",
     "@supabase/supabase-js": "^2.93.2",
     "dotenv": "^17.2.3",
+    "node-fetch": "^2.7.0",
     "pixelmatch": "^7.1.0",
     "playwright": "^1.58.0",
-    "pngjs": "^7.0.0"
+    "pngjs": "^7.0.0",
+    "sharp": "^0.33.5",
+    "zod": "^4.3.6"
   }
 }
