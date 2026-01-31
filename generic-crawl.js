@@ -13,6 +13,9 @@ const discovered = [];
 const connections = [];
 const pathToRouteId = new Map();
 
+// Maximum pages to crawl to prevent timeouts
+const MAX_PAGES = 20;
+
 function getFlowName(path, productName) {
   // Generic flow categorization based on common patterns
   if (path.includes('/admin')) return 'Admin';
@@ -377,9 +380,13 @@ async function run() {
 
   console.log('\nStarting link discovery...\n');
 
-  while (discovered.length > 0) {
+  while (discovered.length > 0 && visited.size < MAX_PAGES) {
     const path = discovered.shift();
     await crawlPage(page, path, baseUrl, product.id, product.name);
+  }
+
+  if (visited.size >= MAX_PAGES) {
+    console.log(`\n⚠ Reached maximum page limit (${MAX_PAGES}). Stopping crawl.`);
   }
 
   await saveConnections(product.id);
