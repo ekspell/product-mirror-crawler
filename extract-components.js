@@ -226,18 +226,23 @@ async function run() {
   console.log('Starting component extraction...\n');
 
   // Get product
-  const { data: products } = await supabase
-    .from('products')
-    .select('id, name')
-    .eq('name', 'Calendly')
-    .limit(1);
+  const productId = process.argv[2];
 
-  if (!products || products.length === 0) {
-    console.log('Product not found');
-    return;
+  if (!productId) {
+    console.error('Usage: node extract-components.js <product-id>');
+    process.exit(1);
   }
 
-  const product = products[0];
+  const { data: product } = await supabase
+    .from('products')
+    .select('id, name')
+    .eq('id', productId)
+    .single();
+
+  if (!product) {
+    console.log(`Product not found: ${productId}`);
+    return;
+  }
 
   console.log(`Product: ${product.name} (${product.id})\n`);
 
