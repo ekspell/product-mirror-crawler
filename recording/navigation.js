@@ -113,9 +113,47 @@ async function startWatching(sessionId, page, { productId, getActiveFlow }) {
   // Also inject into the current page immediately
   await page.evaluate(clickInitScript).catch(() => {});
 
-  // Listen for popups
+  // Listen for popups and capture them too
   page.on('popup', async (popup) => {
     console.log('Popup opened:', popup.url());
+
+    try {
+      // Wait for popup to load
+      await popup.waitForLoadState('domcontentloaded');
+      await new Promise(r => setTimeout(r, 500));
+
+      const flow = getActiveFlow();
+      if (!flow) {
+        console.log('[popup] Skipping capture — no active flow');
+        return;
+      }
+
+      // Get current step count for this flow
+      const { data: existing } = await supabase
+        .from('routes')
+        .select('id')
+        .eq('flow_id', flow.id);
+
+      const stepNumber = (existing?.length || 0) + 1;
+
+      const result = await captureScreenshot(popup, {
+        sessionId,
+        flowId: flow.id,
+        flowName: flow.name,
+        productId,
+        stepNumber,
+      });
+
+      // Update flow step_count
+      await supabase
+        .from('flows')
+        .update({ step_count: stepNumber })
+        .eq('id', flow.id);
+
+      console.log(`[popup] Captured step ${stepNumber} for flow "${flow.name}" — ${result.path}`);
+    } catch (err) {
+      console.error('[popup] Screenshot capture failed:', err.message);
+    }
   });
 
   watchers.set(sessionId, {
