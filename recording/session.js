@@ -43,7 +43,15 @@ async function startSession(productId) {
     throw new Error(`Failed to create session: ${sessionError.message}`);
   }
 
-  // Seed default flows from templates (fall back to hardcoded defaults)
+  // Get existing flows for this product
+  const { data: existingFlows } = await supabase
+    .from('flows')
+    .select('id, name')
+    .eq('product_id', productId);
+
+  const existingFlowNames = new Set((existingFlows || []).map((f) => f.name));
+
+  // Get flow templates (fall back to hardcoded defaults)
   const { data: templates, error: templatesError } = await supabase
     .from('flow_templates')
     .select('name, sort_order')
@@ -55,29 +63,26 @@ async function startSession(productId) {
 
   const flowSource = (templates && templates.length > 0) ? templates : DEFAULT_FLOWS;
 
-  // Deduplicate by name in case flow_templates has duplicate rows
-  const seen = new Set();
-  const uniqueFlows = flowSource.filter((t) => {
-    if (seen.has(t.name)) return false;
-    seen.add(t.name);
-    return true;
-  });
+  // Only create flows that don't already exist for this product
+  const newFlows = flowSource.filter((t) => !existingFlowNames.has(t.name));
 
-  const flowRows = uniqueFlows.map((t) => ({
-    product_id: productId,
-    session_id: session.id,
-    name: t.name,
-    status: 'pending',
-    step_count: 0,
-  }));
+  if (newFlows.length > 0) {
+    const flowRows = newFlows.map((t) => ({
+      product_id: productId,
+      name: t.name,
+      status: 'pending',
+      step_count: 0,
+    }));
 
-  const { error: flowInsertError } = await supabase.from('flows').insert(flowRows);
+    const { error: flowInsertError } = await supabase.from('flows').insert(flowRows);
 
-  if (flowInsertError) {
-    console.error('Failed to seed default flows:', flowInsertError.message);
-    // Don't throw — session is created, user can still add custom flows
+    if (flowInsertError) {
+      console.error('Failed to seed default flows:', flowInsertError.message);
+    } else {
+      console.log(`Created ${flowRows.length} new flows for product ${productId}`);
+    }
   } else {
-    console.log(`Seeded ${flowRows.length} default flows for session ${session.id}`);
+    console.log(`Reusing ${existingFlowNames.size} existing flows for product ${productId}`);
   }
 
   // Launch Playwright browser
@@ -121,11 +126,10 @@ async function endSession(sessionId) {
     throw new Error(`Failed to end session: ${error.message}`);
   }
 
-  // Mark any in-progress flows as completed
+  // Mark any in-progress flows as pending (not completed — they're product-level)
   await supabase
     .from('flows')
-    .update({ status: 'completed', completed_at: new Date().toISOString() })
-    .eq('session_id', sessionId)
+    .update({ status: 'pending' })
     .eq('status', 'recording');
 
   return { success: true };
@@ -135,7 +139,7 @@ async function getSessionStatus(sessionId) {
   // Get session
   const { data: session, error: sessionError } = await supabase
     .from('recording_sessions')
-    .select('id, status, started_at, ended_at')
+    .select('id, status, started_at, ended_at, product_id')
     .eq('id', sessionId)
     .single();
 
@@ -143,11 +147,11 @@ async function getSessionStatus(sessionId) {
     return null;
   }
 
-  // Get flows for this session
+  // Get ALL flows for this product (not session-specific)
   const { data: flows } = await supabase
     .from('flows')
     .select('id, name, status, step_count, created_at, completed_at')
-    .eq('session_id', sessionId)
+    .eq('product_id', session.product_id)
     .order('created_at');
 
   const activeFlow = activeFlows.get(sessionId) || null;
@@ -179,6 +183,17 @@ async function getSessionStatus(sessionId) {
 }
 
 async function startFlow(sessionId, flowName, flowId) {
+  // Get the session's product_id
+  const { data: session } = await supabase
+    .from('recording_sessions')
+    .select('product_id')
+    .eq('id', sessionId)
+    .single();
+
+  if (!session) {
+    throw new Error('Session not found');
+  }
+
   // If flowId provided, update existing flow
   if (flowId) {
     const { error } = await supabase
@@ -199,19 +214,30 @@ async function startFlow(sessionId, flowName, flowId) {
     return { flowId: flow.id, name: flow.name };
   }
 
-  // Otherwise create a new custom flow
-  // First get the session's product_id
-  const { data: session } = await supabase
-    .from('recording_sessions')
-    .select('product_id')
-    .eq('id', sessionId)
+  // Custom flow: check if one with this name already exists for the product
+  const { data: existingFlow } = await supabase
+    .from('flows')
+    .select('id, name')
+    .eq('product_id', session.product_id)
+    .eq('name', flowName)
     .single();
 
+  if (existingFlow) {
+    // Reuse existing flow
+    await supabase
+      .from('flows')
+      .update({ status: 'recording' })
+      .eq('id', existingFlow.id);
+
+    activeFlows.set(sessionId, { id: existingFlow.id, name: existingFlow.name });
+    return { flowId: existingFlow.id, name: existingFlow.name };
+  }
+
+  // Create new custom flow
   const { data: flow, error } = await supabase
     .from('flows')
     .insert({
       product_id: session.product_id,
-      session_id: sessionId,
       name: flowName,
       status: 'recording',
       step_count: 0,
@@ -237,9 +263,8 @@ async function endFlow(sessionId, flowId) {
   const { error } = await supabase
     .from('flows')
     .update({
-      status: 'completed',
+      status: 'pending',
       step_count: screenCount,
-      completed_at: new Date().toISOString(),
     })
     .eq('id', flowId);
 
