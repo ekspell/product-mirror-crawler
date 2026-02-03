@@ -175,7 +175,9 @@ async function getSessionStatus(sessionId) {
     flows: (flows || []).map((f) => ({
       id: f.id,
       name: f.name,
-      status: f.status,
+      // For recording UI: show "recording" only for active flow, "pending" for all others
+      // (regardless of DB status — each session starts fresh)
+      status: activeFlow && activeFlow.id === f.id ? 'recording' : 'pending',
       screenCount: f.step_count || 0,
     })),
     totalScreens,
