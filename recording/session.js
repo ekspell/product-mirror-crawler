@@ -10,16 +10,6 @@ const activeFlows = new Map();
 // sessionId -> Set of flowIds
 const completedFlowsThisSession = new Map();
 
-// Hardcoded defaults — used when flow_templates table is missing or empty
-const DEFAULT_FLOWS = [
-  { name: 'Login / Sign up', sort_order: 1 },
-  { name: 'Dashboard / Home', sort_order: 2 },
-  { name: 'Settings / Account', sort_order: 3 },
-  { name: 'Billing', sort_order: 4 },
-  { name: 'Team / Users', sort_order: 5 },
-  { name: 'Notifications', sort_order: 6 },
-  { name: 'Help / Support', sort_order: 7 },
-];
 
 async function startSession(productId) {
   // Fetch product
@@ -47,47 +37,13 @@ async function startSession(productId) {
     throw new Error(`Failed to create session: ${sessionError.message}`);
   }
 
-  // Get existing flows for this product
+  // Get existing flows for this product (user-created only, no defaults)
   const { data: existingFlows } = await supabase
     .from('flows')
     .select('id, name')
     .eq('product_id', productId);
 
-  const existingFlowNames = new Set((existingFlows || []).map((f) => f.name));
-
-  // Get flow templates (fall back to hardcoded defaults)
-  const { data: templates, error: templatesError } = await supabase
-    .from('flow_templates')
-    .select('name, sort_order')
-    .order('sort_order');
-
-  if (templatesError) {
-    console.warn('flow_templates query failed (table may not exist):', templatesError.message);
-  }
-
-  const flowSource = (templates && templates.length > 0) ? templates : DEFAULT_FLOWS;
-
-  // Only create flows that don't already exist for this product
-  const newFlows = flowSource.filter((t) => !existingFlowNames.has(t.name));
-
-  if (newFlows.length > 0) {
-    const flowRows = newFlows.map((t) => ({
-      product_id: productId,
-      name: t.name,
-      status: 'pending',
-      step_count: 0,
-    }));
-
-    const { error: flowInsertError } = await supabase.from('flows').insert(flowRows);
-
-    if (flowInsertError) {
-      console.error('Failed to seed default flows:', flowInsertError.message);
-    } else {
-      console.log(`Created ${flowRows.length} new flows for product ${productId}`);
-    }
-  } else {
-    console.log(`Reusing ${existingFlowNames.size} existing flows for product ${productId}`);
-  }
+  console.log(`Found ${existingFlows?.length || 0} existing flows for product ${productId}`);
 
   // Launch Playwright browser
   const { page } = await launchBrowser(session.id, product.staging_url);
