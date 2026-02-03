@@ -289,6 +289,7 @@ async function endFlow(sessionId, flowId) {
     completedFlowsThisSession.set(sessionId, new Set());
   }
   completedFlowsThisSession.get(sessionId).add(flowId);
+  console.log(`Marked flow ${flowId} as completed for session ${sessionId}`);
 
   // Clear active flow
   activeFlows.delete(sessionId);

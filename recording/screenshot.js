@@ -1,6 +1,12 @@
 const { supabase } = require('../lib/supabase');
 
 async function captureScreenshot(page, { sessionId, flowId, flowName, productId, stepNumber }) {
+  // Ensure window is in front before capturing
+  await page.bringToFront();
+
+  // Small delay to ensure the page is fully rendered
+  await new Promise(r => setTimeout(r, 100));
+
   const screenshot = await page.screenshot({ fullPage: true });
   const url = page.url();
   let title = '';

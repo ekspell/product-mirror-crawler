@@ -7,14 +7,23 @@ const activeSessions = new Map();
 async function launchBrowser(sessionId, url) {
   const browser = await chromium.launch({
     headless: false,
-    args: ['--start-maximized'],
+    args: [
+      '--start-maximized',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
+    ],
   });
 
+  // Use viewport: null to use the actual window size (maximized)
   const context = await browser.newContext({
-    viewport: { width: 1440, height: 900 },
+    viewport: null,
   });
 
   const page = await context.newPage();
+
+  // Bring window to front and keep it focused
+  await page.bringToFront();
+
   await page.goto(url, { waitUntil: 'domcontentloaded' });
 
   activeSessions.set(sessionId, { browser, context, page });
