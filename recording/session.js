@@ -6,6 +6,10 @@ const { startWatching, stopWatching } = require('./navigation');
 // sessionId -> { id, name }
 const activeFlows = new Map();
 
+// In-memory tracking of flows completed this session
+// sessionId -> Set of flowIds
+const completedFlowsThisSession = new Map();
+
 // Hardcoded defaults — used when flow_templates table is missing or empty
 const DEFAULT_FLOWS = [
   { name: 'Login / Sign up', sort_order: 1 },
@@ -110,8 +114,9 @@ async function endSession(sessionId) {
   // Close browser
   await closeBrowser(sessionId);
 
-  // Clear active flow
+  // Clear session tracking
   activeFlows.delete(sessionId);
+  completedFlowsThisSession.delete(sessionId);
 
   // Mark session complete in DB
   const { error } = await supabase
@@ -172,14 +177,21 @@ async function getSessionStatus(sessionId) {
           screenCount: (flows || []).find((f) => f.id === activeFlow.id)?.step_count || 0,
         }
       : null,
-    flows: (flows || []).map((f) => ({
-      id: f.id,
-      name: f.name,
-      // For recording UI: show "recording" only for active flow, "pending" for all others
-      // (regardless of DB status — each session starts fresh)
-      status: activeFlow && activeFlow.id === f.id ? 'recording' : 'pending',
-      screenCount: f.step_count || 0,
-    })),
+    flows: (flows || []).map((f) => {
+      const completedThisSession = completedFlowsThisSession.get(sessionId);
+      let status = 'pending';
+      if (activeFlow && activeFlow.id === f.id) {
+        status = 'recording';
+      } else if (completedThisSession && completedThisSession.has(f.id)) {
+        status = 'completed';
+      }
+      return {
+        id: f.id,
+        name: f.name,
+        status,
+        screenCount: f.step_count || 0,
+      };
+    }),
     totalScreens,
   };
 }
@@ -271,6 +283,12 @@ async function endFlow(sessionId, flowId) {
     .eq('id', flowId);
 
   if (error) throw new Error(`Failed to end flow: ${error.message}`);
+
+  // Track this flow as completed for this session
+  if (!completedFlowsThisSession.has(sessionId)) {
+    completedFlowsThisSession.set(sessionId, new Set());
+  }
+  completedFlowsThisSession.get(sessionId).add(flowId);
 
   // Clear active flow
   activeFlows.delete(sessionId);
