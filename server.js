@@ -81,6 +81,8 @@ app.get('/api/recording/status', async (req, res) => {
 app.post('/api/recording/flow/start', async (req, res) => {
   try {
     const { sessionId, flowName, flowId } = req.body;
+    console.log('Flow start request:', { sessionId, flowName, flowId });
+
     if (!sessionId) {
       return res.status(400).json({ error: 'sessionId is required' });
     }
@@ -89,6 +91,7 @@ app.post('/api/recording/flow/start', async (req, res) => {
     }
 
     const result = await startFlow(sessionId, flowName, flowId);
+    console.log('Flow started:', result);
     res.json({ success: true, flowId: result.flowId, name: result.name });
   } catch (err) {
     console.error('POST /api/recording/flow/start error:', err.message);

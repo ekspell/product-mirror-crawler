@@ -225,6 +225,7 @@ async function startFlow(sessionId, flowName, flowId) {
       .single();
 
     activeFlows.set(sessionId, { id: flow.id, name: flow.name });
+    console.log(`Active flow set for session ${sessionId}:`, { id: flow.id, name: flow.name });
     return { flowId: flow.id, name: flow.name };
   }
 
