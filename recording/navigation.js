@@ -7,12 +7,22 @@ const watchers = new Map();
 
 async function startWatching(sessionId, page, { productId, getActiveFlow }) {
   let lastUrl = page.url();
-  let lastCaptureTime = 0;
-  const DEBOUNCE_MS = 2000;
+  let lastCapturedUrl = null;
+  let captureInProgress = false;
 
   async function tryCapture(reason) {
-    const now = Date.now();
-    if (now - lastCaptureTime < DEBOUNCE_MS) return;
+    const currentUrl = page.url();
+
+    // Skip if we already captured this exact URL
+    if (currentUrl === lastCapturedUrl) {
+      return;
+    }
+
+    // Skip if a capture is already in progress
+    if (captureInProgress) {
+      console.log(`[${reason}] Skipping — capture already in progress`);
+      return;
+    }
 
     const flow = getActiveFlow();
     if (!flow) {
@@ -20,7 +30,8 @@ async function startWatching(sessionId, page, { productId, getActiveFlow }) {
       return;
     }
 
-    lastCaptureTime = now;
+    captureInProgress = true;
+    lastCapturedUrl = currentUrl;
 
     // Get current step count for this flow
     const { data: existing } = await supabase
@@ -48,6 +59,10 @@ async function startWatching(sessionId, page, { productId, getActiveFlow }) {
       console.log(`[${reason}] Captured step ${stepNumber} for flow "${flow.name}" — ${result.path}`);
     } catch (err) {
       console.error(`[${reason}] Screenshot capture failed:`, err.message);
+      // Reset lastCapturedUrl so we can retry this page
+      lastCapturedUrl = null;
+    } finally {
+      captureInProgress = false;
     }
   }
 
